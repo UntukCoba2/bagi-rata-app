@@ -93,32 +93,35 @@ export default function App() {
   };
 
   const handleActualScan = async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+    const file = e.target.files[0];
+    if (!file) return;
 
-  setIsScanning(true);
-  triggerVibration(20);
+    setIsScanning(true);
+    triggerVibration(20);
 
-  try {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    
-    reader.onloadend = async () => {
-      const base64Image = reader.result;
+    try {
+      // 1. Memaksa aplikasi menunggu proses konversi gambar hingga selesai
+      const base64Image = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = (error) => reject(error);
+      });
 
-      // Mengirim gambar ke backend Vercel kita
+      // 2. Mengirim ke Backend Vercel
       const response = await fetch('/api/scan-receipt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64: base64Image })
       });
 
-      if (!response.ok) throw new Error('API Error');
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
 
       const data = await response.json();
       
       if (data.items && data.items.length > 0) {
-        // Format data sesuai kebutuhan state aplikasi
         const formattedItems = data.items.map((item, index) => ({
           id: `scan_${Date.now()}_${index}`,
           name: item.name || 'Item Tak Dikenal',
@@ -129,26 +132,26 @@ export default function App() {
         }));
         
         setItems(formattedItems);
-        setIsUnitPriceMode(false); // Struk mencatat harga total
+        setIsUnitPriceMode(false);
         triggerVibration([15, 30, 15]);
         setStep(2);
       } else {
-        throw new Error('Tidak ada menu terdeteksi');
+        throw new Error('Tidak ada data dari AI');
       }
-    };
-  } catch (error) {
-    triggerVibration([30, 50, 30]);
-    setDialog({ 
-      type: 'alert', 
-      title: 'Gagal Membaca Struk ❌', 
-      message: 'Pastikan foto struk terang, teksnya jelas, dan tidak terpotong. Silakan gunakan input manual jika masih gagal.' 
-    });
-  } finally {
-    // Reset input file agar bisa scan gambar yang sama lagi jika perlu
-    e.target.value = '';
-    setIsScanning(false);
-  }
-};
+
+    } catch (error) {
+      console.error("Scan Error:", error);
+      triggerVibration([30, 50, 30]);
+      setDialog({ 
+        type: 'alert', 
+        title: 'Gagal Membaca Struk ❌', 
+        message: 'Koneksi ke AI gagal atau struk tidak terbaca. Pastikan URL API benar dan koneksi lancar.' 
+      });
+    } finally {
+      e.target.value = ''; // Reset file input
+      setIsScanning(false); // Matikan loading HANYA setelah semua proses (sukses/gagal) selesai
+    }
+  };
 
   const handleNextFromStep2 = () => {
     triggerVibration(20);
