@@ -49,6 +49,8 @@ export default function App() {
   const [dialog, setDialog] = useState(null); 
   const receiptRef = useRef(null);
 
+  const [isScanning, setIsScanning] = useState(false);
+
   const triggerVibration = (pattern = 10) => {
     try {
       if (typeof window !== 'undefined' && 'vibrate' in navigator) {
@@ -90,16 +92,63 @@ export default function App() {
     });
   };
 
-  const handleSimulateScan = () => {
-    triggerVibration(20);
-    setIsUnitPriceMode(false);
-    setItems([
-      { id: 'item1', name: 'Nasi Goreng', price: 105000, qty: 3, assignedTo: {}, isSplitEqually: false }, 
-      { id: 'item2', name: 'Es Kopi Susu', price: 20000, qty: 1, assignedTo: {}, isSplitEqually: false },
-      { id: 'item3', name: 'Snack Platter Besar', price: 75000, qty: 1, assignedTo: {}, isSplitEqually: false },
-    ]);
-    setStep(2);
-  };
+  const handleActualScan = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  setIsScanning(true);
+  triggerVibration(20);
+
+  try {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    
+    reader.onloadend = async () => {
+      const base64Image = reader.result;
+
+      // Mengirim gambar ke backend Vercel kita
+      const response = await fetch('/api/scan-receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64Image })
+      });
+
+      if (!response.ok) throw new Error('API Error');
+
+      const data = await response.json();
+      
+      if (data.items && data.items.length > 0) {
+        // Format data sesuai kebutuhan state aplikasi
+        const formattedItems = data.items.map((item, index) => ({
+          id: `scan_${Date.now()}_${index}`,
+          name: item.name || 'Item Tak Dikenal',
+          price: item.price || 0,
+          qty: item.qty || 1,
+          assignedTo: {},
+          isSplitEqually: false
+        }));
+        
+        setItems(formattedItems);
+        setIsUnitPriceMode(false); // Struk mencatat harga total
+        triggerVibration([15, 30, 15]);
+        setStep(2);
+      } else {
+        throw new Error('Tidak ada menu terdeteksi');
+      }
+    };
+  } catch (error) {
+    triggerVibration([30, 50, 30]);
+    setDialog({ 
+      type: 'alert', 
+      title: 'Gagal Membaca Struk ❌', 
+      message: 'Pastikan foto struk terang, teksnya jelas, dan tidak terpotong. Silakan gunakan input manual jika masih gagal.' 
+    });
+  } finally {
+    // Reset input file agar bisa scan gambar yang sama lagi jika perlu
+    e.target.value = '';
+    setIsScanning(false);
+  }
+};
 
   const handleNextFromStep2 = () => {
     triggerVibration(20);
@@ -435,7 +484,22 @@ export default function App() {
                       <p className="text-gray-500 text-sm">Hitung patungan tanpa pusing.</p>
                     </div>
                     <div className="w-full space-y-4 mt-8">
-                      <MainButton onClick={handleSimulateScan}><Camera size={22} /> Scan Struk Bill</MainButton>
+                      {isScanning ? (
+                        <button disabled className="w-full font-bold py-4 px-4 rounded-2xl flex justify-center items-center gap-2 cursor-not-allowed bg-blue-300 text-white shadow-none">
+                          <span className="animate-pulse">Menganalisis Struk... ⏳</span>
+                        </button>
+                      ) : (
+                        <label className="w-full font-bold py-4 px-4 rounded-2xl shadow-lg flex justify-center items-center gap-2 transition-all active:scale-[0.98] cursor-pointer bg-gradient-to-r from-blue-600 to-blue-500 text-white hover:from-blue-700 hover:to-blue-600 shadow-blue-500/30">
+                          <Camera size={22} /> Scan Struk Bill
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            capture="environment"
+                            onChange={handleActualScan} 
+                            className="hidden" 
+                          />
+                        </label>
+                      )}
                       <div className="flex items-center w-full py-2">
                         <hr className="flex-1 border-gray-200" /><span className="px-3 text-gray-400 text-xs font-bold uppercase tracking-wider">Atau</span><hr className="flex-1 border-gray-200" />
                       </div>
