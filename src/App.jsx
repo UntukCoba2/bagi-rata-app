@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Camera, User, Plus, ArrowRight, ArrowLeft, CheckCircle2, Edit2, UserPlus, X, Minus, Share2, Users, Settings, Save, Trash2, Receipt } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Camera, User, Plus, ArrowRight, ArrowLeft, CheckCircle2, Edit2, UserPlus, X, Minus, Share2, Users, Settings, Save, Trash2, Receipt, Download } from 'lucide-react';
+import html2canvas from 'html2canvas';
 
 function useLocalStorage(key, initialValue) {
   const [storedValue, setStoredValue] = useState(() => {
@@ -39,6 +40,17 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState({ bank: '', account: '', name: '' });
   const [tempPaymentInfo, setTempPaymentInfo] = useState({ bank: '', account: '', name: '' });
+  const [isDownloading, setIsDownloading] = useState(false);
+  const receiptRef = useRef(null);
+
+  // Fungsi getar dengan Try-Catch agar aman dari crash di browser tidak mendukung
+  const triggerVibration = (pattern = 10) => {
+    try {
+      if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate(pattern);
+      }
+    } catch (error) {} // Abaikan jika gagal
+  };
 
   useEffect(() => {
     const savedInfo = localStorage.getItem('bagiRataPaymentInfo');
@@ -46,12 +58,14 @@ export default function App() {
   }, []);
 
   const handleSavePaymentInfo = () => {
+    triggerVibration(20);
     setPaymentInfo(tempPaymentInfo);
     localStorage.setItem('bagiRataPaymentInfo', JSON.stringify(tempPaymentInfo));
     setShowSettings(false);
   };
 
   const handleResetApp = () => {
+    triggerVibration([30, 50, 30]);
     if(window.confirm("Yakin ingin menghapus semua data dan membuat tagihan baru?")) {
       setStep(1);
       setItems([]);
@@ -65,6 +79,7 @@ export default function App() {
   };
 
   const handleSimulateScan = () => {
+    triggerVibration(20);
     setIsUnitPriceMode(false);
     setItems([
       { id: 'item1', name: 'Nasi Goreng', price: 105000, qty: 3, assignedTo: {}, isSplitEqually: false }, 
@@ -75,7 +90,8 @@ export default function App() {
   };
 
   const handleNextFromStep2 = () => {
-    const validItems = items.filter(item => item.name.trim() !== "");
+    triggerVibration(20);
+    const validItems = items.filter(item => (item.name || "").trim() !== "");
     if (validItems.length === 0) {
       alert("⚠️ Harap masukkan setidaknya satu nama menu sebelum lanjut!");
       return;
@@ -87,30 +103,40 @@ export default function App() {
   const handleAddFriend = (e) => {
     e.preventDefault();
     if (!newFriendName.trim()) return;
+    triggerVibration(15);
     setFriends([...friends, { id: `f${Date.now()}`, name: newFriendName.trim() }]);
     setNewFriendName("");
   };
 
   const openModal = (item) => {
+    if (!item) return; // Mencegah crash jika item kosong
+    triggerVibration(15);
     setActiveItemForAssignment(item.id);
     setTempSelections(item.assignedTo || {});
     setModalSplitMode(item.isSplitEqually ? 'equal' : 'portion');
   };
 
   const handleToggleModalMode = (mode) => {
+    triggerVibration(10);
     setModalSplitMode(mode);
     setTempSelections({}); 
   };
 
+  // --- PERLINDUNGAN EKSTRA DI LEVEL REFERENSI ---
   const currentItem = items.find(i => i.id === activeItemForAssignment);
-  const totalSelectedQty = Object.values(tempSelections).reduce((acc, val) => acc + val, 0);
+  const totalSelectedQty = Object.values(tempSelections || {}).reduce((acc, val) => acc + (val || 0), 0);
 
   const incrementQty = (friendId) => {
-    if (totalSelectedQty < currentItem.qty) setTempSelections(prev => ({ ...prev, [friendId]: (prev[friendId] || 0) + 1 }));
+    if (!currentItem) return; // Perlindungan Blank Screen
+    triggerVibration(10);
+    if (totalSelectedQty < (currentItem.qty || 1)) {
+      setTempSelections(prev => ({ ...prev, [friendId]: (prev[friendId] || 0) + 1 }));
+    }
   };
 
   const decrementQty = (friendId) => {
     if (tempSelections[friendId] > 0) {
+      triggerVibration(10);
       setTempSelections(prev => {
         const updated = { ...prev, [friendId]: prev[friendId] - 1 };
         if (updated[friendId] === 0) delete updated[friendId];
@@ -120,6 +146,7 @@ export default function App() {
   };
 
   const toggleShare = (friendId) => {
+    triggerVibration(15);
     setTempSelections(prev => {
       const updated = { ...prev };
       if (updated[friendId]) delete updated[friendId]; else updated[friendId] = 1; 
@@ -128,19 +155,26 @@ export default function App() {
   };
 
   const handleSaveAssignment = () => {
+    if (!currentItem) {
+      setActiveItemForAssignment(null);
+      return;
+    }
     if (modalSplitMode === 'portion' && totalSelectedQty > 0 && totalSelectedQty !== currentItem.qty) {
       alert(`⚠️ Porsi belum pas!\n\nAnda membagikan ${totalSelectedQty} dari ${currentItem.qty} porsi.`);
       return;
     }
-    setItems(items.map(item => item.id === activeItemForAssignment ? { ...item, assignedTo: tempSelections, isSplitEqually: modalSplitMode === 'equal' } : item));
+    triggerVibration([15, 30, 15]);
+    setItems(items.map(item => item.id === activeItemForAssignment ? { ...item, assignedTo: tempSelections || {}, isSplitEqually: modalSplitMode === 'equal' } : item));
     setActiveItemForAssignment(null);
   };
 
   const handleCalculate = () => {
+    triggerVibration(20);
     const isAllAssigned = items.every(item => {
-      if (item.isSplitEqually) return Object.keys(item.assignedTo).length > 0;
-      const assignedQty = Object.values(item.assignedTo).reduce((acc, val) => acc + val, 0);
-      return assignedQty === item.qty;
+      const assignedTo = item.assignedTo || {}; // Perlindungan jika cache lama
+      if (item.isSplitEqually) return Object.keys(assignedTo).length > 0;
+      const assignedQty = Object.values(assignedTo).reduce((acc, val) => acc + val, 0);
+      return assignedQty === (item.qty || 1);
     });
 
     if (!isAllAssigned) {
@@ -156,18 +190,22 @@ export default function App() {
     setItems(newItems);
   };
 
-  const getItemActualTotal = (item) => isUnitPriceMode ? (item.price * item.qty) : item.price;
+  const getItemActualTotal = (item) => {
+    if (!item) return 0;
+    return isUnitPriceMode ? ((item.price || 0) * (item.qty || 1)) : (item.price || 0);
+  };
 
   const getCalculatedTotals = () => {
     const totalSubtotal = items.reduce((sum, item) => sum + getItemActualTotal(item), 0);
     return friends.map(friend => {
       let friendSubtotal = 0;
       items.forEach(item => {
-        if (item.assignedTo[friend.id]) {
+        const assignedTo = item.assignedTo || {};
+        if (assignedTo[friend.id]) {
           if (item.isSplitEqually) {
-            friendSubtotal += getItemActualTotal(item) / Object.keys(item.assignedTo).length;
+            friendSubtotal += getItemActualTotal(item) / Math.max(1, Object.keys(assignedTo).length);
           } else {
-            friendSubtotal += (isUnitPriceMode ? item.price : (item.price / item.qty)) * item.assignedTo[friend.id];
+            friendSubtotal += (isUnitPriceMode ? (item.price || 0) : ((item.price || 0) / Math.max(1, item.qty || 1))) * assignedTo[friend.id];
           }
         }
       });
@@ -192,6 +230,7 @@ export default function App() {
   };
 
   const handleShareWA = () => {
+    triggerVibration(20);
     const totals = getCalculatedTotals();
     const grandTotalCollected = totals.reduce((sum, f) => sum + f.grandTotal, 0);
     let text = "*RINGKASAN PATUNGAN* 📝\n\n";
@@ -206,6 +245,32 @@ export default function App() {
       text += "\nTransfer ke Rekening/QRIS: [Isi Disini]";
     }
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`);
+  };
+
+  const handleDownloadReceipt = async () => {
+    if (!receiptRef.current) return;
+    setIsDownloading(true);
+    triggerVibration(15);
+    
+    try {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const canvas = await html2canvas(receiptRef.current, {
+        scale: 2,
+        backgroundColor: '#f9fafb',
+        useCORS: true,
+      });
+      
+      const image = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = image;
+      link.download = `Tagihan-BagiRata-${new Date().getTime()}.png`;
+      link.click();
+      triggerVibration([15, 30, 15]); 
+    } catch (error) {
+      alert("Maaf, terjadi kesalahan saat membuat gambar struk.");
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const InputStyleBase = "p-3.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all text-gray-800 font-medium";
@@ -223,34 +288,75 @@ export default function App() {
 
   return (
     <>
-      {/* 
-        SUNTIKAN CSS: Menyembunyikan scrollbar di seluruh browser tanpa menghilangkan fungsi scroll 
-      */}
       <style>{`
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
 
-      {/* 
-        KUNCI UTAMA (Viewport Lock): 
-        h-[100dvh] dan overflow-hidden akan memaksa aplikasi sama persis dengan layar HP, 
-        sehingga body browser tidak bisa digulir sama sekali.
-      */}
+      {/* STRUK UNTUK DI DOWNLOAD */}
+      <div className="absolute top-[-9999px] left-[-9999px]">
+        <div ref={receiptRef} className="w-[450px] bg-gray-50 p-8 font-sans text-gray-800">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="text-center mb-6 border-b-2 border-dashed border-gray-200 pb-6">
+              <h1 className="text-3xl font-black text-gray-900 tracking-tight">BAGIRATA</h1>
+              <p className="text-gray-500 text-sm mt-1">{new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+            </div>
+            
+            <div className="space-y-4 mb-6 border-b-2 border-dashed border-gray-200 pb-6">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Rincian Patungan</h3>
+              {getCalculatedTotals().map(friend => {
+                if (friend.grandTotal <= 0 && friend.subtotal === 0) return null;
+                return (
+                  <div key={`receipt-${friend.id}`} className="flex justify-between items-start">
+                    <div>
+                      <p className="font-bold text-gray-900 text-lg">{friend.name}</p>
+                      <p className="text-xs text-gray-500">Makan: Rp {Math.round(friend.subtotal).toLocaleString('id-ID')}</p>
+                    </div>
+                    <p className="font-black text-blue-600 text-lg">Rp {friend.grandTotal.toLocaleString('id-ID')}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="space-y-2 mb-6 border-b-2 border-dashed border-gray-200 pb-6">
+              <div className="flex justify-between text-sm text-gray-500">
+                <span>Pajak</span><span>Rp {tax.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between text-sm text-gray-500">
+                <span>Service Charge</span><span>Rp {serviceCharge.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between text-sm text-emerald-600">
+                <span>Diskon</span><span>- Rp {discount.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between text-xl font-black text-gray-900 pt-2 mt-2 border-t border-gray-100">
+                <span>TOTAL KESELURUHAN</span>
+                <span>Rp {getCalculatedTotals().reduce((sum, f) => sum + f.grandTotal, 0).toLocaleString('id-ID')}</span>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+              <h3 className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2">Info Pembayaran</h3>
+              <p className="font-bold text-gray-900">{paymentInfo.bank || 'Bank / E-Wallet belum diset'}</p>
+              <p className="font-mono text-lg text-blue-700 font-bold my-1">{paymentInfo.account || '-'}</p>
+              <p className="text-sm text-gray-600">a.n {paymentInfo.name || '-'}</p>
+            </div>
+            
+            <div className="text-center mt-6 text-xs font-bold text-gray-400 uppercase tracking-widest">Dibuat otomatis oleh Aplikasi BagiRata</div>
+          </div>
+        </div>
+      </div>
+
       <div className="h-[100dvh] w-full overflow-hidden bg-gray-100 md:bg-gray-200 flex justify-center md:items-center font-sans text-gray-800 relative">
-        
-        {/* Kontainer Aplikasi Utama */}
         <div className="w-full max-w-md bg-white md:rounded-[2.5rem] md:shadow-2xl overflow-hidden flex flex-col relative h-full md:h-[85vh] md:max-h-[850px]">
           
-          {/* Progress Bar */}
           <div className="h-1.5 w-full bg-gray-100 absolute top-0 z-20 shrink-0">
             <div className="h-full bg-blue-500 transition-all duration-500 rounded-r-full" style={{ width: `${(step / 5) * 100}%` }}></div>
           </div>
 
-          {/* Header Universal (Terkunci di Atas) */}
           <div className="flex justify-between items-center px-6 pt-6 pb-2 relative z-10 bg-white shrink-0">
             <div className="flex items-center gap-3">
               {step > 1 && (
-                <button onClick={() => setStep(step - 1)} className="p-2 -ml-2 bg-gray-50 rounded-full text-gray-600 hover:bg-gray-200 transition-colors">
+                <button onClick={() => { triggerVibration(10); setStep(step - 1); }} className="p-2 -ml-2 bg-gray-50 rounded-full text-gray-600 hover:bg-gray-200 transition-colors">
                   <ArrowLeft size={20} />
                 </button>
               )}
@@ -258,12 +364,11 @@ export default function App() {
                 {step === 1 ? 'BagiRata' : step === 2 ? 'Cek Tagihan' : step === 3 ? 'Anggota' : step === 4 ? 'Pembagian' : 'Ringkasan'}
               </h2>
             </div>
-            <button onClick={() => { setTempPaymentInfo(paymentInfo); setShowSettings(true); }} className="p-2.5 bg-gray-50 border border-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition-colors">
+            <button onClick={() => { triggerVibration(10); setTempPaymentInfo(paymentInfo); setShowSettings(true); }} className="p-2.5 bg-gray-50 border border-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition-colors">
               <Settings size={20} />
             </button>
           </div>
 
-          {/* Area Konten Dinamis (Ini satu-satunya bagian yang BISA digulir) */}
           <div className="flex-1 overflow-y-auto px-6 pb-6 pt-2 hide-scroll">
             
             {step === 1 && (
@@ -280,7 +385,7 @@ export default function App() {
                   <div className="flex items-center w-full py-2">
                     <hr className="flex-1 border-gray-200" /><span className="px-3 text-gray-400 text-xs font-bold uppercase tracking-wider">Atau</span><hr className="flex-1 border-gray-200" />
                   </div>
-                  <MainButton onClick={() => { setItems([{ id: 'm1', name: '', price: 0, qty: 1, assignedTo: {}, isSplitEqually: false }]); setStep(2); }} variant="outline">
+                  <MainButton onClick={() => { triggerVibration(15); setItems([{ id: 'm1', name: '', price: 0, qty: 1, assignedTo: {}, isSplitEqually: false }]); setStep(2); }} variant="outline">
                     <Edit2 size={20} className="text-gray-500" /> Input Manual
                   </MainButton>
                 </div>
@@ -291,8 +396,8 @@ export default function App() {
               <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <p className="text-sm text-gray-500 mb-2">Biarkan nama menu kosong untuk menghapus</p>
                 <div className="flex justify-between items-center bg-gray-50 p-1.5 rounded-xl border border-gray-100 shadow-inner">
-                  <button onClick={() => setIsUnitPriceMode(false)} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${!isUnitPriceMode ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>Total Harga</button>
-                  <button onClick={() => setIsUnitPriceMode(true)} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${isUnitPriceMode ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>Harga Satuan</button>
+                  <button onClick={() => { triggerVibration(10); setIsUnitPriceMode(false); }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${!isUnitPriceMode ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>Total Harga</button>
+                  <button onClick={() => { triggerVibration(10); setIsUnitPriceMode(true); }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${isUnitPriceMode ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>Harga Satuan</button>
                 </div>
 
                 <div className="space-y-3 mt-4">
@@ -303,7 +408,7 @@ export default function App() {
                       <input type="text" inputMode="numeric" value={item.price ? item.price.toLocaleString('id-ID') : ''} onChange={(e) => handlePriceInput(e, index)} className={`${InputStyleBase} w-32 shrink-0 text-right`} placeholder={isUnitPriceMode ? "Satuan" : "Total"} />
                     </div>
                   ))}
-                  <button onClick={() => setItems([...items, { id: `m${Date.now()}`, name: '', price: 0, qty: 1, assignedTo: {}, isSplitEqually: false }])} className="text-blue-600 font-bold text-sm flex items-center gap-1 mt-4 px-2 py-2 hover:bg-blue-50 rounded-lg transition-colors">
+                  <button onClick={() => { triggerVibration(10); setItems([...items, { id: `m${Date.now()}`, name: '', price: 0, qty: 1, assignedTo: {}, isSplitEqually: false }]); }} className="text-blue-600 font-bold text-sm flex items-center gap-1 mt-4 px-2 py-2 hover:bg-blue-50 rounded-lg transition-colors">
                     <Plus size={18} /> Tambah Menu Lain
                   </button>
                 </div>
@@ -333,16 +438,17 @@ export default function App() {
               <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <p className="text-sm text-gray-500 mb-4">Klik pada menu untuk memilih siapa yang pesan.</p>
                 {items.map((item) => {
-                  const assignedCount = Object.keys(item.assignedTo).length;
-                  const assignedQty = Object.values(item.assignedTo).reduce((acc, val) => acc + val, 0);
-                  const isFulfilled = item.isSplitEqually ? assignedCount > 0 : assignedQty === item.qty;
+                  const assignedTo = item.assignedTo || {};
+                  const assignedCount = Object.keys(assignedTo).length;
+                  const assignedQty = Object.values(assignedTo).reduce((acc, val) => acc + val, 0);
+                  const isFulfilled = item.isSplitEqually ? assignedCount > 0 : assignedQty === (item.qty || 1);
                   const displayPrice = getItemActualTotal(item);
 
                   return (
                     <button key={item.id} onClick={() => openModal(item)} className={`w-full text-left p-4 bg-white rounded-2xl shadow-sm border-2 transition-all hover:shadow-md active:scale-[0.99] ${isFulfilled ? 'border-green-200 bg-green-50/20' : 'border-gray-100 hover:border-blue-200'} flex justify-between items-center`}>
                       <div className="flex-1 pr-4">
                         <div className="flex items-center gap-2 mb-1.5">
-                          <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md text-xs font-black">{item.qty}x</span>
+                          <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md text-xs font-black">{item.qty || 1}x</span>
                           <h3 className="font-bold text-gray-900">{item.name}</h3>
                         </div>
                         <p className="text-sm font-medium text-gray-500">Rp {displayPrice.toLocaleString('id-ID')}</p>
@@ -351,7 +457,7 @@ export default function App() {
                       <div className={`shrink-0 h-10 px-4 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
                           isFulfilled ? 'bg-green-100 text-green-700' : (assignedQty > 0 || assignedCount > 0) ? 'bg-orange-100 text-orange-700' : 'bg-gray-50 text-gray-400 border border-gray-200'
                         }`}>
-                        {isFulfilled ? <CheckCircle2 size={20} /> : item.isSplitEqually ? <Users size={18} /> : assignedQty > 0 ? `${assignedQty}/${item.qty}` : <Plus size={20} />}
+                        {isFulfilled ? <CheckCircle2 size={20} /> : item.isSplitEqually ? <Users size={18} /> : assignedQty > 0 ? `${assignedQty}/${item.qty || 1}` : <Plus size={20} />}
                       </div>
                     </button>
                   );
@@ -379,9 +485,9 @@ export default function App() {
                 <div className="bg-white p-2 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center">
                   <span className="text-xs font-bold text-gray-600 pl-3">Pembulatan:</span>
                   <div className="flex bg-gray-50 p-1 rounded-xl">
-                    <button onClick={() => setRoundingMode(1)} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${roundingMode === 1 ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>Tepat</button>
-                    <button onClick={() => setRoundingMode(500)} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${roundingMode === 500 ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>500</button>
-                    <button onClick={() => setRoundingMode(1000)} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${roundingMode === 1000 ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>1Rb</button>
+                    <button onClick={() => { triggerVibration(10); setRoundingMode(1); }} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${roundingMode === 1 ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>Tepat</button>
+                    <button onClick={() => { triggerVibration(10); setRoundingMode(500); }} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${roundingMode === 500 ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>500</button>
+                    <button onClick={() => { triggerVibration(10); setRoundingMode(1000); }} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${roundingMode === 1000 ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>1Rb</button>
                   </div>
                 </div>
 
@@ -408,28 +514,34 @@ export default function App() {
             )}
           </div>
 
-          {/* Footer Aksi (Terkunci di Bawah) */}
           {step > 1 && (
             <div className="bg-white p-6 pt-4 border-t border-gray-100 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.05)] z-10 shrink-0">
               {step === 2 && <MainButton onClick={handleNextFromStep2}>Lanjut ke Anggota <ArrowRight size={20} /></MainButton>}
-              {step === 3 && <MainButton onClick={() => setStep(4)} disabled={friends.length < 1}>Mulai Bagi Tagihan <ArrowRight size={20} /></MainButton>}
+              {step === 3 && <MainButton onClick={() => { triggerVibration(15); setStep(4); }} disabled={friends.length < 1}>Mulai Bagi Tagihan <ArrowRight size={20} /></MainButton>}
               
               {step === 4 && (
                 <div className="space-y-3">
                   <div className="flex gap-3">
-                    <button onClick={() => setStep(2)} className="flex-1 bg-white border-2 border-gray-100 text-gray-600 font-bold py-2.5 rounded-xl flex justify-center items-center gap-2 hover:bg-gray-50 active:scale-95 transition-all text-sm"><Edit2 size={16} /> Edit Menu</button>
-                    <button onClick={() => setStep(3)} className="flex-1 bg-white border-2 border-gray-100 text-gray-600 font-bold py-2.5 rounded-xl flex justify-center items-center gap-2 hover:bg-gray-50 active:scale-95 transition-all text-sm"><UserPlus size={16} /> Edit Teman</button>
+                    <button onClick={() => { triggerVibration(10); setStep(2); }} className="flex-1 bg-white border-2 border-gray-100 text-gray-600 font-bold py-2.5 rounded-xl flex justify-center items-center gap-2 hover:bg-gray-50 active:scale-95 transition-all text-sm"><Edit2 size={16} /> Edit Menu</button>
+                    <button onClick={() => { triggerVibration(10); setStep(3); }} className="flex-1 bg-white border-2 border-gray-100 text-gray-600 font-bold py-2.5 rounded-xl flex justify-center items-center gap-2 hover:bg-gray-50 active:scale-95 transition-all text-sm"><UserPlus size={16} /> Edit Teman</button>
                   </div>
                   <MainButton onClick={handleCalculate} variant="success"><CheckCircle2 size={20} /> Selesai & Hitung Total</MainButton>
                 </div>
               )}
               
-              {step === 5 && <MainButton onClick={handleShareWA} variant="success"><Share2 size={20} /> Bagikan ke WhatsApp</MainButton>}
+              {step === 5 && (
+                <div className="space-y-3">
+                  <MainButton onClick={handleShareWA} variant="success"><Share2 size={20} /> Bagikan ke WhatsApp</MainButton>
+                  <button onClick={handleDownloadReceipt} disabled={isDownloading} className="w-full bg-white text-blue-600 border-2 border-blue-100 font-bold py-3.5 px-4 rounded-2xl flex justify-center items-center gap-2 hover:bg-blue-50 transition-all active:scale-95 disabled:opacity-50">
+                    {isDownloading ? <span className="animate-pulse">Membuat Gambar...</span> : <><Download size={20} /> Download Gambar Struk</>}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Modals & Bottom Sheets */}
-          {activeItemForAssignment && (
+          {/* PERLINDUNGAN: Modal HANYA muncul jika currentItem valid (tidak crash) */}
+          {activeItemForAssignment && currentItem && (
             <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
               <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity" onClick={handleSaveAssignment}></div>
               <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-3xl p-6 pb-8 relative z-10 animate-in slide-in-from-bottom-full duration-300">
@@ -437,20 +549,23 @@ export default function App() {
                 <div className="flex justify-between items-start mb-6">
                   <div>
                     <h3 className="font-extrabold text-2xl text-gray-900 leading-tight">{currentItem.name}</h3>
-                    <p className="text-sm font-medium text-gray-500 mt-1">{modalSplitMode === 'portion' ? `${currentItem.qty} Porsi Tersedia` : `Total Rp ${getItemActualTotal(currentItem).toLocaleString('id-ID')}`}</p>
+                    <p className="text-sm font-medium text-gray-500 mt-1">{modalSplitMode === 'portion' ? `${currentItem.qty || 1} Porsi Tersedia` : `Total Rp ${getItemActualTotal(currentItem).toLocaleString('id-ID')}`}</p>
                   </div>
-                  <button onClick={handleSaveAssignment} className="p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200"><X size={20} /></button>
+                  <button onClick={() => { triggerVibration(10); handleSaveAssignment(); }} className="p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200"><X size={20} /></button>
                 </div>
+                
                 <div className="flex bg-gray-100 p-1.5 rounded-xl mb-5 shadow-inner">
                   <button onClick={() => handleToggleModalMode('portion')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${modalSplitMode === 'portion' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>Bagi per Porsi</button>
                   <button onClick={() => handleToggleModalMode('equal')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${modalSplitMode === 'equal' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>Bagi Rata</button>
                 </div>
+
                 {modalSplitMode === 'portion' && (
                   <div className="bg-blue-50/50 border border-blue-100 text-blue-800 p-3 rounded-xl text-center font-bold mb-4 flex justify-between items-center text-sm">
                     <span>Porsi terbagikan:</span>
-                    <span className={`text-lg font-black ${totalSelectedQty === currentItem.qty ? 'text-green-600' : 'text-blue-600'}`}>{totalSelectedQty} / {currentItem.qty}</span>
+                    <span className={`text-lg font-black ${totalSelectedQty === (currentItem.qty || 1) ? 'text-green-600' : 'text-blue-600'}`}>{totalSelectedQty} / {currentItem.qty || 1}</span>
                   </div>
                 )}
+                
                 <div className="space-y-3 max-h-[45vh] overflow-y-auto mb-6 hide-scroll">
                   {friends.map(friend => {
                     const isSelected = !!tempSelections[friend.id];
@@ -461,13 +576,15 @@ export default function App() {
                           <div className={`p-2 rounded-full ${(modalSplitMode === 'equal' ? isSelected : qty > 0) ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}><User size={18} /></div>
                           <span className={`font-bold ${(modalSplitMode === 'equal' ? isSelected : qty > 0) ? 'text-blue-900' : 'text-gray-700'}`}>{friend.name}</span>
                         </div>
+                        
                         {modalSplitMode === 'portion' && (
                           <div className="flex items-center gap-3">
                             <button onClick={() => decrementQty(friend.id)} className={`p-1.5 rounded-full transition-all active:scale-90 ${qty > 0 ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-300'}`}><Minus size={16} /></button>
                             <span className="font-black text-lg w-5 text-center text-gray-900">{qty}</span>
-                            <button onClick={() => incrementQty(friend.id)} disabled={totalSelectedQty >= currentItem.qty} className={`p-1.5 rounded-full transition-all active:scale-90 ${totalSelectedQty < currentItem.qty ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-300'}`}><Plus size={16} /></button>
+                            <button onClick={() => incrementQty(friend.id)} disabled={totalSelectedQty >= (currentItem.qty || 1)} className={`p-1.5 rounded-full transition-all active:scale-90 ${totalSelectedQty < (currentItem.qty || 1) ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-300'}`}><Plus size={16} /></button>
                           </div>
                         )}
+                        
                         {modalSplitMode === 'equal' && (
                           <button onClick={() => toggleShare(friend.id)} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-blue-600 border-blue-600 text-white scale-110' : 'bg-white border-gray-300'}`}>
                             {isSelected && <CheckCircle2 size={16} />}
@@ -477,10 +594,11 @@ export default function App() {
                     );
                   })}
                 </div>
+                
                 <MainButton 
                   onClick={handleSaveAssignment} 
-                  variant={(modalSplitMode === 'portion' && totalSelectedQty === currentItem.qty) || (modalSplitMode === 'equal' && Object.keys(tempSelections).length > 0) ? 'success' : 'primary'}
-                  disabled={Object.keys(tempSelections).length === 0 && modalSplitMode === 'equal'}
+                  variant={(modalSplitMode === 'portion' && totalSelectedQty === (currentItem.qty || 1)) || (modalSplitMode === 'equal' && Object.keys(tempSelections || {}).length > 0) ? 'success' : 'primary'}
+                  disabled={Object.keys(tempSelections || {}).length === 0 && modalSplitMode === 'equal'}
                 >
                   Simpan & Tutup
                 </MainButton>
@@ -498,7 +616,7 @@ export default function App() {
                     <h3 className="font-extrabold text-xl text-gray-900">Pengaturan</h3>
                     <p className="text-xs font-medium text-gray-500 mt-1">Info pencairan dana otomatis tersimpan</p>
                   </div>
-                  <button onClick={() => setShowSettings(false)} className="p-2 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200"><X size={20} /></button>
+                  <button onClick={() => { triggerVibration(10); setShowSettings(false); }} className="p-2 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200"><X size={20} /></button>
                 </div>
                 <div className="space-y-4 mb-8">
                   <div>
