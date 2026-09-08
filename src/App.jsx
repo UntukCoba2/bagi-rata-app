@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, User, Plus, ArrowRight, ArrowLeft, CheckCircle2, Edit2, UserPlus, X, Minus, Share2, Users, Settings, Save, Trash2, Receipt, Download } from 'lucide-react';
 import html2canvas from 'html2canvas';
-import { motion, AnimatePresence } from 'framer-motion'; // IMPORT FRAMER MOTION
+import { motion, AnimatePresence } from 'framer-motion';
 
 function useLocalStorage(key, initialValue) {
   const [storedValue, setStoredValue] = useState(() => {
@@ -34,6 +34,9 @@ export default function App() {
   const [roundingMode, setRoundingMode] = useLocalStorage('br_rounding', 1);
   
   const [newFriendName, setNewFriendName] = useState("");
+  const [editingFriendId, setEditingFriendId] = useState(null);
+  const [editFriendName, setEditFriendName] = useState("");
+
   const [activeItemForAssignment, setActiveItemForAssignment] = useState(null);
   const [tempSelections, setTempSelections] = useState({});
   const [modalSplitMode, setModalSplitMode] = useState('portion');
@@ -101,11 +104,20 @@ export default function App() {
   const handleNextFromStep2 = () => {
     triggerVibration(20);
     const validItems = items.filter(item => (item.name || "").trim() !== "");
+    
     if (validItems.length === 0) {
       triggerVibration([30, 50, 30]);
       setDialog({ type: 'alert', title: 'Menu Masih Kosong ⚠️', message: 'Harap masukkan setidaknya satu nama menu sebelum melanjutkan!' });
       return;
     }
+    
+    const hasEmptyPrice = validItems.some(item => !item.price || item.price <= 0);
+    if (hasEmptyPrice) {
+      triggerVibration([30, 50, 30]);
+      setDialog({ type: 'alert', title: 'Harga Tidak Valid ⚠️', message: 'Terdapat menu yang harganya masih kosong atau 0. Harap isi harga untuk semua menu.' });
+      return;
+    }
+
     setItems(validItems);
     setStep(3);
   };
@@ -116,6 +128,35 @@ export default function App() {
     triggerVibration(15);
     setFriends([...friends, { id: `f${Date.now()}`, name: newFriendName.trim() }]);
     setNewFriendName("");
+  };
+
+  const startEditFriend = (friend) => {
+    triggerVibration(10);
+    setEditingFriendId(friend.id);
+    setEditFriendName(friend.name);
+  };
+
+  const saveEditFriend = (id) => {
+    if(!editFriendName.trim()) {
+      setEditingFriendId(null);
+      return;
+    }
+    triggerVibration(10);
+    setFriends(friends.map(f => f.id === id ? { ...f, name: editFriendName.trim() } : f));
+    setEditingFriendId(null);
+  };
+
+  const deleteFriend = (id) => {
+    triggerVibration([15, 30]);
+    setFriends(friends.filter(f => f.id !== id));
+    setItems(items.map(item => {
+      if (item.assignedTo && item.assignedTo[id]) {
+        const newAssigned = { ...item.assignedTo };
+        delete newAssigned[id];
+        return { ...item, assignedTo: newAssigned };
+      }
+      return item;
+    }));
   };
 
   const openModal = (item) => {
@@ -298,7 +339,6 @@ export default function App() {
     return <button onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]}`}>{children}</button>;
   };
 
-  // --- VARIANTS ANIMASI FRAMER MOTION ---
   const pageVariants = {
     initial: { opacity: 0, x: 20 },
     in: { opacity: 1, x: 0 },
@@ -381,24 +421,32 @@ export default function App() {
           </div>
 
           {/* AREA KONTEN DENGAN ANIMATE PRESENCE */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6 pt-2 hide-scroll relative">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6 pt-2 hide-scroll relative flex flex-col">
             <AnimatePresence mode="wait">
               
               {step === 1 && (
-                <motion.div key="step1" initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition} className="flex flex-col items-center justify-center h-full space-y-8 py-10">
-                  <div className="w-24 h-24 bg-blue-50 rounded-3xl flex items-center justify-center shadow-inner mb-2"><Receipt size={48} className="text-blue-500" /></div>
-                  <div className="text-center">
-                    <h1 className="text-3xl font-extrabold text-gray-900 mb-2">BagiRata</h1>
-                    <p className="text-gray-500 text-sm">Hitung patungan tanpa pusing.</p>
-                  </div>
-                  <div className="w-full space-y-4 mt-8">
-                    <MainButton onClick={handleSimulateScan}><Camera size={22} /> Scan Struk Bill</MainButton>
-                    <div className="flex items-center w-full py-2">
-                      <hr className="flex-1 border-gray-200" /><span className="px-3 text-gray-400 text-xs font-bold uppercase tracking-wider">Atau</span><hr className="flex-1 border-gray-200" />
+                <motion.div key="step1" initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition} className="flex flex-col items-center justify-between h-full pt-10 pb-2">
+                  <div className="flex flex-col items-center w-full">
+                    <div className="w-32 h-32 mb-4 bg-white border-2 border-gray-100 rounded-3xl p-3 shadow-sm flex items-center justify-center relative">
+                      <img src="/pwa-192x192.png" alt="BagiRata Logo" className="w-full h-full object-contain rounded-2xl" />
                     </div>
-                    <MainButton onClick={() => { triggerVibration(15); setItems([{ id: 'm1', name: '', price: 0, qty: 1, assignedTo: {}, isSplitEqually: false }]); setStep(2); }} variant="outline">
-                      <Edit2 size={20} className="text-gray-500" /> Input Manual
-                    </MainButton>
+                    <div className="text-center">
+                      <h1 className="text-3xl font-extrabold text-gray-900 mb-2">BagiRata</h1>
+                      <p className="text-gray-500 text-sm">Hitung patungan tanpa pusing.</p>
+                    </div>
+                    <div className="w-full space-y-4 mt-8">
+                      <MainButton onClick={handleSimulateScan}><Camera size={22} /> Scan Struk Bill</MainButton>
+                      <div className="flex items-center w-full py-2">
+                        <hr className="flex-1 border-gray-200" /><span className="px-3 text-gray-400 text-xs font-bold uppercase tracking-wider">Atau</span><hr className="flex-1 border-gray-200" />
+                      </div>
+                      <MainButton onClick={() => { triggerVibration(15); setItems([{ id: 'm1', name: '', price: 0, qty: 1, assignedTo: {}, isSplitEqually: false }]); setStep(2); }} variant="outline">
+                        <Edit2 size={20} className="text-gray-500" /> Input Manual
+                      </MainButton>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-gray-400 text-center mt-auto font-medium tracking-wide pb-2">
+                    Copyright © 2026 BagiRata<br/>Designed by Stubadibap All rights reserved
                   </div>
                 </motion.div>
               )}
@@ -435,9 +483,27 @@ export default function App() {
                   <div className="space-y-2 mt-6">
                     {friends.length === 0 && <div className="text-center py-10 text-gray-400 text-sm border-2 border-dashed border-gray-100 rounded-2xl">Belum ada anggota</div>}
                     {friends.map((friend) => (
-                      <div key={friend.id} className="p-3.5 bg-white border border-gray-100 rounded-2xl flex items-center gap-4 shadow-sm hover:border-blue-200 hover:shadow-md transition-all">
-                        <div className="bg-gradient-to-br from-blue-100 to-blue-50 p-2.5 rounded-full text-blue-600"><User size={18} /></div>
-                        <span className="font-bold text-gray-700">{friend.name}</span>
+                      <div key={friend.id} className="p-3 bg-white border border-gray-100 rounded-2xl flex items-center gap-3 shadow-sm hover:border-blue-200 hover:shadow-md transition-all group">
+                        <div className="bg-gradient-to-br from-blue-100 to-blue-50 p-2.5 rounded-full text-blue-600 shrink-0"><User size={18} /></div>
+                        
+                        {editingFriendId === friend.id ? (
+                          <div className="flex-1 flex items-center gap-2">
+                            <input 
+                              type="text" 
+                              value={editFriendName} 
+                              onChange={(e) => setEditFriendName(e.target.value)} 
+                              className="flex-1 w-full bg-gray-50 border border-gray-200 rounded-lg p-1.5 focus:outline-none focus:border-blue-500 font-bold text-gray-700 text-sm" 
+                              autoFocus 
+                            />
+                            <button onClick={() => saveEditFriend(friend.id)} className="text-green-500 p-1.5 hover:bg-green-50 rounded-lg"><CheckCircle2 size={18} /></button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="font-bold text-gray-700 flex-1 truncate">{friend.name}</span>
+                            <button onClick={() => startEditFriend(friend)} className="text-gray-400 hover:text-blue-500 p-2 hover:bg-blue-50 rounded-lg transition-colors"><Edit2 size={16} /></button>
+                            <button onClick={() => deleteFriend(friend.id)} className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>
+                          </>
+                        )}
                       </div>
                     ))}
                   </div>
